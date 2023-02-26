@@ -1,0 +1,34 @@
+diff --git a/.gitignore b/.gitignore
+index 0461c273de..601f31c7c3 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -281,3 +281,5 @@ images/test_text.png
+ 
+ src/mod/codecs/mod_amrwb/test/test_amrwb
+ src/mod/endpoints/mod_sofia/test/sipp-based-tests
++
++.vscode
+diff --git a/build/modules.conf.in b/build/modules.conf.in
+index 7bf59e2acc..a87a17ccc5 100644
+--- a/build/modules.conf.in
++++ b/build/modules.conf.in
+@@ -97,6 +97,7 @@ endpoints/mod_rtc
+ endpoints/mod_skinny
+ endpoints/mod_sofia
+ endpoints/mod_verto
++endpoints/mod_my_echo
+ #event_handlers/mod_amqp
+ event_handlers/mod_cdr_csv
+ #event_handlers/mod_cdr_mongodb
+diff --git a/configure.ac b/configure.ac
+index f09196bdfd..3565b09c6d 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -2185,6 +2185,7 @@ AC_CONFIG_FILES([Makefile
+ 		src/mod/endpoints/mod_unicall/Makefile
+ 		src/mod/endpoints/mod_rtc/Makefile
+ 		src/mod/endpoints/mod_verto/Makefile
++		src/mod/endpoints/mod_my_echo/Makefile
+ 		src/mod/event_handlers/mod_amqp/Makefile
+ 		src/mod/event_handlers/mod_cdr_csv/Makefile
+ 		src/mod/event_handlers/mod_cdr_mongodb/Makefile
