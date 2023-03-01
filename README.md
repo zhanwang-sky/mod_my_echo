@@ -15,7 +15,14 @@ then
 ./bootstrap.sh
 ./configure
 make
-make install
+make mod_my_echo-install
+```
+
+in fs_cli:
+
+```
+load mod_my_echo
+unload mod_my_echo
 ```
 
 have fun🌞.

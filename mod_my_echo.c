@@ -40,6 +40,19 @@ SWITCH_MODULE_RUNTIME_FUNCTION(mod_my_echo_runtime);
  */
 SWITCH_MODULE_DEFINITION(mod_my_echo, mod_my_echo_load, mod_my_echo_shutdown, mod_my_echo_runtime);
 
+switch_call_cause_t my_echo_outgoing_channel(switch_core_session_t*, switch_event_t*, switch_caller_profile_t*,
+                                             switch_core_session_t**, switch_memory_pool_t**,
+                                             switch_originate_flag_t, switch_call_cause_t*);
+switch_status_t my_echo_read_frame(switch_core_session_t*, switch_frame_t**, switch_io_flag_t, int);
+switch_status_t my_echo_write_frame(switch_core_session_t*, switch_frame_t*, switch_io_flag_t, int);
+switch_status_t my_echo_kill_channel(switch_core_session_t*, int);
+switch_status_t my_echo_send_dtmf(switch_core_session_t*, const switch_dtmf_t*);
+switch_status_t my_echo_receive_message(switch_core_session_t*, switch_core_session_message_t*);
+switch_status_t my_echo_receive_event(switch_core_session_t*, switch_event_t*);
+switch_status_t my_echo_read_video_frame(switch_core_session_t*, switch_frame_t**, switch_io_flag_t, int);
+switch_status_t my_echo_write_video_frame(switch_core_session_t*, switch_frame_t*, switch_io_flag_t, int);
+switch_jb_t* my_echo_get_jb(switch_core_session_t*, switch_media_type_t);
+
 typedef struct {
     switch_caller_profile_t *caller_profile;
     switch_channel_t *channel;
@@ -48,13 +61,31 @@ typedef struct {
     switch_core_media_params_t mparams;
 } private_object_t;
 
-static struct {
+/* Global Variables */
+struct {
     switch_memory_pool_t *pool;
     switch_mutex_t *mutex;
     switch_thread_cond_t *cond;
     int running;
     int exited;
 } mod_my_echo_globals;
+
+switch_io_routines_t my_echo_io_routines = {
+    /*.outgoing_channel */ my_echo_outgoing_channel,
+    /*.read_frame */ my_echo_read_frame,
+    /*.write_frame */ my_echo_write_frame,
+    /*.kill_channel */ my_echo_kill_channel,
+    /*.send_dtmf */ my_echo_send_dtmf,
+    /*.receive_message */ my_echo_receive_message,
+    /*.receive_event */ my_echo_receive_event,
+    /*.state_change */ NULL,
+    /*.read_video_frame */ my_echo_read_video_frame,
+    /*.write_video_frame */ my_echo_write_video_frame,
+    /*.read_text_frame */ NULL,
+    /*.write_text_frame */ NULL,
+    /*.state_run*/ NULL,
+    /*.get_jb*/ my_echo_get_jb
+};
 
 switch_endpoint_interface_t *my_echo_endpoint_interface;
 
@@ -74,6 +105,7 @@ SWITCH_MODULE_LOAD_FUNCTION(mod_my_echo_load) {
 
     my_echo_endpoint_interface = switch_loadable_module_create_interface(*module_interface, SWITCH_ENDPOINT_INTERFACE);
     my_echo_endpoint_interface->interface_name = "my_echo";
+    my_echo_endpoint_interface->io_routines = &my_echo_io_routines;
 
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "finish loading mod_my_echo\n");
 
@@ -131,4 +163,98 @@ SWITCH_MODULE_RUNTIME_FUNCTION(mod_my_echo_runtime) {
     switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_NOTICE, "mod_my_echo runtime ended\n");
 
     return SWITCH_STATUS_TERM;
+}
+
+void my_echo_set_name(private_object_t *tech_pvt, const char *channame) {
+    char name[256];
+    switch_snprintf(name, sizeof(name), "my_echo/%s", channame);
+    switch_channel_set_name(tech_pvt->channel, name);
+}
+
+void my_echo_attach_private(switch_core_session_t *session, private_object_t *tech_pvt, const char *channame) {
+    switch_assert(session != NULL);
+    switch_assert(tech_pvt != NULL);
+
+    switch_core_session_add_stream(session, NULL);
+
+    tech_pvt->session = session;
+    tech_pvt->channel = switch_core_session_get_channel(session);
+
+    // XXX TODO
+    // switch_channel_set_cap(tech_pvt->channel, CC_FLAG_XXX);
+
+    // XXX TODO
+    // tech_pvt->mparams.rtp_timeout_sec = xxx;
+
+    switch_media_handle_create(&tech_pvt->media_handle, session, &tech_pvt->mparams);
+     // XXX TODO
+    // switch_media_handle_set_media_flags(tech_pvt->media_handle, media_flags);
+
+    switch_core_media_check_dtmf_type(session);
+
+    switch_core_session_set_private(session, tech_pvt);
+
+    if (channame) {
+        my_echo_set_name(tech_pvt, channame);
+    }
+}
+
+private_object_t *my_echo_new_pvt(switch_core_session_t *session) {
+    private_object_t *tech_pvt = (private_object_t*) switch_core_session_alloc(session, sizeof(private_object_t));
+    return tech_pvt;
+}
+
+switch_call_cause_t my_echo_outgoing_channel(switch_core_session_t *session, switch_event_t *var_event,
+                                             switch_caller_profile_t *outbound_profile,
+                                             switch_core_session_t **new_session, switch_memory_pool_t **pool,
+                                             switch_originate_flag_t flags, switch_call_cause_t *cancel_cause) {
+    switch_core_session_t *nsession = NULL;
+    private_object_t *tech_pvt = NULL;
+    switch_channel_t *nchannel = NULL;
+    switch_caller_profile_t *caller_profile = NULL;
+    switch_call_cause_t cause = SWITCH_CAUSE_DESTINATION_OUT_OF_ORDER;
+
+    *new_session = NULL;
+
+    if (!(nsession = switch_core_session_request_uuid(my_echo_endpoint_interface, SWITCH_CALL_DIRECTION_OUTBOUND,
+                                                      flags, pool, switch_event_get_header(var_event, "origination_uuid")))) {
+        switch_log_printf(SWITCH_CHANNEL_LOG, SWITCH_LOG_CRIT, "Error Creating Session\n");
+        goto error;
+    }
+
+    tech_pvt = my_echo_new_pvt(nsession);
+
+    nchannel = switch_core_session_get_channel(nsession);
+
+    if (outbound_profile) {
+        caller_profile = switch_caller_profile_clone(nsession, outbound_profile);
+        switch_channel_set_caller_profile(nchannel, caller_profile);
+    }
+    tech_pvt->caller_profile = caller_profile;
+
+    my_echo_attach_private(nsession, tech_pvt, NULL);
+
+    if (switch_channel_get_state(nchannel) == CS_NEW) {
+        switch_channel_set_state(nchannel, CS_INIT);
+    }
+
+    *new_session = nsession;
+
+    // XXX TODO
+    // if (session) {
+    //     switch_ivr_transfer_variable(session, nsession, "xxx");
+    // }
+
+    return SWITCH_CAUSE_SUCCESS;
+
+error:
+    if (nsession) {
+        switch_core_session_destroy(&nsession);
+    }
+
+    if (pool) {
+        *pool = NULL;
+    }
+
+    return cause;
 }
