@@ -258,3 +258,108 @@ error:
 
     return cause;
 }
+
+switch_status_t my_echo_read_frame(switch_core_session_t* session, switch_frame_t** frame,
+                                   switch_io_flag_t flags, int stream_id) {
+    private_object_t* tech_pvt = (private_object_t*) switch_core_session_get_private(session);
+
+    switch_assert(tech_pvt != NULL);
+
+    if (!(switch_core_media_ready(session, SWITCH_MEDIA_TYPE_AUDIO))) {
+        return SWITCH_STATUS_INUSE;
+    }
+
+    return switch_core_media_read_frame(session, frame, flags, stream_id, SWITCH_MEDIA_TYPE_AUDIO);
+}
+
+switch_status_t my_echo_write_frame(switch_core_session_t* session, switch_frame_t* frame,
+                                    switch_io_flag_t flags, int stream_id) {
+    switch_channel_t* channel = switch_core_session_get_channel(session);
+    private_object_t* tech_pvt = (private_object_t*) switch_core_session_get_private(session);
+
+    switch_assert(tech_pvt != NULL);
+
+    if (!switch_core_media_ready(session, SWITCH_MEDIA_TYPE_AUDIO)) {
+        if (switch_channel_up_nosig(channel)) {
+            return SWITCH_STATUS_SUCCESS;
+        }
+        return SWITCH_STATUS_GENERR;
+    }
+
+    return switch_core_media_write_frame(session, frame, flags, stream_id, SWITCH_MEDIA_TYPE_AUDIO);
+}
+
+switch_status_t my_echo_kill_channel(switch_core_session_t* session, int sig) {
+    private_object_t* tech_pvt = switch_core_session_get_private(session);
+
+    if (!tech_pvt) {
+        return SWITCH_STATUS_FALSE;
+    }
+
+    switch (sig) {
+    case SWITCH_SIG_BREAK:
+        if (switch_core_media_ready(tech_pvt->session, SWITCH_MEDIA_TYPE_AUDIO)) {
+            switch_core_media_break(tech_pvt->session, SWITCH_MEDIA_TYPE_AUDIO);
+        }
+        if (switch_core_media_ready(tech_pvt->session, SWITCH_MEDIA_TYPE_VIDEO)) {
+            switch_core_media_break(tech_pvt->session, SWITCH_MEDIA_TYPE_VIDEO);
+        }
+        break;
+
+    case SWITCH_SIG_KILL:
+    default:
+        if (switch_core_media_ready(tech_pvt->session, SWITCH_MEDIA_TYPE_AUDIO)) {
+            switch_core_media_kill_socket(tech_pvt->session, SWITCH_MEDIA_TYPE_AUDIO);
+        }
+        if (switch_core_media_ready(tech_pvt->session, SWITCH_MEDIA_TYPE_VIDEO)) {
+            switch_core_media_kill_socket(tech_pvt->session, SWITCH_MEDIA_TYPE_VIDEO);
+        }
+        break;
+    }
+
+    return SWITCH_STATUS_SUCCESS;
+}
+
+switch_status_t my_echo_send_dtmf(switch_core_session_t* session, const switch_dtmf_t* dtmf) {
+    return SWITCH_STATUS_SUCCESS;
+}
+
+switch_status_t my_echo_receive_message(switch_core_session_t* session, switch_core_session_message_t* msg) {
+    switch_channel_t* channel = switch_core_session_get_channel(session);
+    private_object_t* tech_pvt = switch_core_session_get_private(session);
+
+    switch_assert(tech_pvt != NULL);
+
+    if (switch_channel_down(channel)) {
+        return SWITCH_STATUS_FALSE;
+    }
+
+    return SWITCH_STATUS_SUCCESS;
+}
+
+switch_status_t my_echo_receive_event(switch_core_session_t* session, switch_event_t* event) {
+    return SWITCH_STATUS_SUCCESS;
+}
+
+switch_status_t my_echo_read_video_frame(switch_core_session_t* session, switch_frame_t** frame,
+                                         switch_io_flag_t flags, int stream_id) {
+    private_object_t* tech_pvt = (private_object_t*) switch_core_session_get_private(session);
+
+    switch_assert(tech_pvt != NULL);
+
+    return switch_core_media_read_frame(session, frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO);
+}
+
+switch_status_t my_echo_write_video_frame(switch_core_session_t* session, switch_frame_t* frame,
+                                          switch_io_flag_t flags, int stream_id) {
+    private_object_t* tech_pvt = (private_object_t*) switch_core_session_get_private(session);
+
+    switch_assert(tech_pvt != NULL);
+
+    return switch_core_media_write_frame(session, frame, flags, stream_id, SWITCH_MEDIA_TYPE_VIDEO);
+}
+
+switch_jb_t* my_echo_get_jb(switch_core_session_t* session, switch_media_type_t type) {
+    private_object_t* tech_pvt = (private_object_t*) switch_core_session_get_private(session);
+    return switch_core_media_get_jb(tech_pvt->session, type);
+}
